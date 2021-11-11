@@ -1,0 +1,157 @@
+---
+title: "Project I"
+output: html_notebook
+author: Danielle Buhr & Anthony Volcheck
+---
+ 	Your first project must address the following sections.
+		1. Import the data using an appropriate R/Python/ SAS function   
+		2. Filter the data using the 51 states including DC.
+		3. Explain how the data set is imported and cleaned
+		4. Rank all the states based on the above cancer diseases using  appropriate methods
+		5. List the steps required to conduct your analysis
+		6. Write the summary of  your report ( between 4 and 10 pages)
+		7. Include some of your outputs  with your summary
+Cover Sheet: Name / Date / Name of the project 
+
+
+		1. Import the data using an appropriate R/Python/ SAS function 
+```{r}
+#library(plyr)
+library(dplyr)
+library(tidyverse)
+library(MCDA)
+library(topsis)
+library(quadprog)
+library(shiny)
+library(ggplot2)
+library(readr)
+library(tidyr)
+
+byarea<-read_delim(file="~/R/MAT 449 Stat Data MGMT/Project I/DATA/BYAREA.TXT",delim="|",escape_double=FALSE,trim_ws=TRUE,col_names = TRUE,col_types = "fnnnifnfffcnnn",na=c("", "NA","-","~","+"))
+
+#AGE, AGE_ADJUSTED_CI_LOWER,AGE_ADJUSTED_CI_UPPER, AGE_ADJUSTED_RATE, BEHAVIOR, COUNT, POPULATION, SEX, SITE, YEAR, CRUDE_CI_LOWER, CRUDE_CI_UPPER, CRUDE_RATE
+head(byarea)
+#problems(byarea)
+```
+2. Filter the data using the 51 states including DC.
+```{r}
+byarea<- byarea[byarea$AREA!="United States (comparable to ICD-O-2)",]
+data<-byarea[(byarea$SITE=="All Cancer Sites Combined"
+              |byarea$SITE=="Female Breast"
+              |byarea$SITE=="Colon and Rectum"
+              |byarea$SITE=="kidney"
+              |byarea$SITE=="Leukemia"
+              |byarea$SITE=="Liver and Intrahepatic Bile Duct"
+              |byarea$SITE=="Lung and Bronchus"
+              |byarea$SITE=="Hodgkin Lymphoma"
+              |byarea$SITE=="Melanomas of the Skin"
+              |byarea$SITE=="Ovary"
+              |byarea$SITE=="Prostate"
+              ),]
+
+data<-byarea[byarea$YEAR!="2014-2018"
+             &byarea$YEAR!="2013-2017"
+               ,]
+
+data<- data%>%
+  rename(adjAGE= "AGE_ADJUSTED_RATE",Ladj= "AGE_ADJUSTED_CI_LOWER",Uadj= "AGE_ADJUSTED_CI_UPPER",Count= "COUNT",Pop ="POPULATION",Crude = "CRUDE_RATE", LCrude = "CRUDE_CI_LOWER", UCrude = "CRUDE_CI_UPPER",EventType = "EVENT_TYPE",Area = "AREA")
+
+head(data)
+
+
+```
+	3. Explain how the data set is imported and cleaned
++ imported: see import
++ cleaned: keyed the folling instances as "NA" and removed from evaluation :
+      The following suppression rules are implemented in the file. 
+--Rates and Counts are suppressed if fewer than 16 cases were reported in a specific category ('~' assigned to count, rate, LCI, and UCI); 
+--Rate and Counts are suppressed if state requested suppressions for race and ethnicity ('-' assigned to count, rate, LCI, and UCI);
+--Within each Race, CancerSite, Area, RateType and DataType, "Male" or "Female" counts are suppressed (supplementarily) if the counterpart sex ("Female" or "Male") is suppressed. Leave "Male and Female" count unchanged ('+' assigned to count due to supplementary suppression). 
+--"|" as a delimiter and blank is used to stand for missing. Additionally, these files have complementary cell suppression and the suppression at states' request applied.  
+
+
+
+```{r}
+
+by_StateI<- data %>%
+  group_by(Area) %>%
+  filter( RACE=="All Races"|SITE=="All Cancer Sites Combined"| SEX=="Male and Female"|EventType=="Incidence") %>%
+  summarise(across(c(adjAGE,Crude ), sum, na.rm = TRUE))
+head(by_StateI)
+
+by_StateMort<- data %>%
+  group_by(Area) %>%
+  filter( SITE=="All Cancer Sites Combined"| SEX=="Male and Female"|EventType=="Mortality") %>%
+  summarise(across(c(adjAGE,Crude ), sum, na.rm = TRUE))
+head(by_StateMort)
+
+
+
+```
+4. Rank all the states based on the above cancer diseases using  appropriate methods 
+a.Incidence Rate
+```{r}
+
+StateITable <- as.data.frame(by_StateI[,-1])
+row.names(StateITable) <- c("Alabama","Alaska","Arizona","Arkansas","California","Colorado","Connecticut","Delaware","DC","Florida","Georgia","Hawaii", "Idaho","Illinois","Indiana","Iowa","Kansas","Kentucky","Louisiana","Maine","Maryland","Massachusetts","Michigan","Minnesota","Mississippi","Missouri", "Montana","Nebraska","Nevada","NewHampshire","NewJersey","NewMexico","NewYork","NorthCarolina","NorthDakota","Ohio","Oklahoma","Oregon","Pennsylvania", "RhodeIsland","SouthCarolina","SouthDakota","Tennessee","Texas","Utah","Vermont","Virginia","Washington","WestVirginia","Wisconsin","Wyoming")
+colnames(StateITable) <- c("adjAGE","Crude" )
+
+#criteriaMinMax notes on impacts of criterion influences alternatives 
+#Min: adj adge- because cancer is ,more prevalent w/ age, so a younger death would be the "Less desirable"(?) 
+#Max: Crude rate- max to optimize worst outcome
+criteriaMinMax <- c("min", "max")
+weights <- c(0.5,0.5)
+
+names(weights) <- colnames(StateITable)
+names(criteriaMinMax) <- colnames(StateITable)
+
+
+Score_State_Incidence <- TOPSIS(StateITable, weights,criteriaMinMax)
+Topsis_By_State_Incidence <- as.data.frame(Score_State_Incidence) %>%
+  arrange(desc(Score_State_Incidence))
+  
+Topsis_By_State_Incidence  
+```
+
+
+4. Rank all the states based on the above cancer diseases using  appropriate methods 
+b.Mortality Rate
+```{r}
+
+StateMTable <- as.data.frame(by_StateMort[,-1])
+row.names(StateMTable) <- c("Alabama","Alaska","Arizona","Arkansas","California","Colorado","Connecticut","Delaware","DC","Florida","Georgia","Hawaii", "Idaho","Illinois","Indiana","Iowa","Kansas","Kentucky","Louisiana","Maine","Maryland","Massachusetts","Michigan","Minnesota","Mississippi","Missouri", "Montana","Nebraska","Nevada","NewHampshire","NewJersey","NewMexico","NewYork","NorthCarolina","NorthDakota","Ohio","Oklahoma","Oregon","Pennsylvania", "RhodeIsland","SouthCarolina","SouthDakota","Tennessee","Texas","Utah","Vermont","Virginia","Washington","WestVirginia","Wisconsin","Wyoming")
+colnames(StateMTable) <- c("adjAGE","Crude" )
+
+#criteriaMinMax notes on impacts of criterion influences alternatives 
+#Min: adj adge- because cancer is ,more prevalent w/ age, so a younger death would be the "Less desirable"(?) 
+#Max: Crude rate- max to optimize worst outcome
+criteriaMinMax <- c("min", "max")
+weights <- c(0.5,0.5)
+
+names(weights) <- colnames(StateMTable)
+names(criteriaMinMax) <- colnames(StateMTable)
+
+
+Score_State_Incidence <- TOPSIS(StateMTable, weights,criteriaMinMax)
+Topsis_By_State_Incidence <- as.data.frame(Score_State_Incidence) %>%
+  arrange(desc(Score_State_Incidence))
+  
+Topsis_By_State_Incidence  
+```
+
+
+
+
+6. Summary
+
++ Variables Definitions ( not the same data set, but close):https://www.cdc.gov/cancer/uscs/public-use/us/variables.htm
+
++ Notes and considerations for summary:Careful consideration is needed in interpreting and comparing rankings of state cancer rates:A natural reaction of some readers when looking at figures that rank their state’s cancer rates is to seek explanations as to why their state has higher incidence or death rates for some cancers than other states or than the national average. For example, some may be alarmed that exposure to environmental carcinogens may be responsible when in fact there are several other more likely explanations. The following points should be kept in mind when interpreting or comparing these rankings—
+
++ Completeness of Cancer Incidence Data: Because states vary in their completeness of case ascertainment, rankings may vary to a minor extent.
+Random Factors and Cancer Rates. Even if registries were able to collect 100% of diagnosed cancer cases, there would still be some uncertainty in computed cancer rates because many factors contribute to the incidence and death rate in any given year or state, and some factors exhibit random behavior. Chance plays a role in determining if and when cancer develops in an individual, whether that cancer is detected, whether the information is entered into the cancer registry, and whether that cancer progresses and leads to death. For these reasons, the reported rates are expected to vary from year to year within a state even in the absence of a general trend. Caution is warranted, therefore, when examining cancer rates for a single year, and especially when the rates are based on a relatively small number of cases.
+
+
++ Geographic Variation:Geographic variation in cancer incidence rates may result from regional differences in the exposure of the population to known or unknown risk factors. Differences may arise because of differences in sociodemographic characteristics of the population (age, race and ethnicity, geographic region, urban or rural residence), screening use, health-related behaviors (for example, tobacco use, diet, physical activity), exposure to cancer-causing agents, or factors associated with the registries’ operations (completeness, timeliness, specificity in coding cancer sites). Cancer researchers are investigating variability associated with known factors that affect cancer rates and risks by using model-based statistical techniques and other approaches for surveillance research. Differences in registry operations are being evaluated to ensure consistency and quality in reporting data.
+
+  
